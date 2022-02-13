@@ -50,8 +50,8 @@ namespace wWw.Saz
             return Request(client, entry, parameters, null);
         }
 
-        public static async Task<object> Request(this HttpClient client, SazEntry entry, ParameterPart[] parameters,
-            FilePart[] files)
+        public static async Task<object> Request(this HttpClient client, SazEntry entry, ParameterPart[]? parameters,
+            FilePart[]? files)
         {
             var template = await entry.GetRequestAsync();
             var request = template.GetRequest(parameters, files);
@@ -100,7 +100,7 @@ namespace wWw.Saz
             return new(request.Headers.GetHeadersValue(Method));
         }
 
-        public static string GetContentType(this ParsedHttpRequest request)
+        public static string? GetContentType(this ParsedHttpRequest request)
         {
             var contentType = request.Headers.GetHeadersValue(ContentType);
             return contentType?.Split(';')[0];
@@ -164,8 +164,8 @@ namespace wWw.Saz
 
         public static MultipartFormDataContent GetFormData(
             this MultipartFormDataParser parts,
-            IReadOnlyList<ParameterPart> parameters = null,
-            IReadOnlyList<FilePart> files = null)
+            IReadOnlyList<ParameterPart>? parameters = null,
+            IReadOnlyList<FilePart>? files = null)
         {
             var boundary = Boundary + DateTime.Now.Ticks;
             var formContent = new MultipartFormDataContent(boundary);
@@ -237,10 +237,10 @@ namespace wWw.Saz
         public static HttpRequestMessage GetRequest(
             this ParsedHttpRequest request,
             bool parseBody = true,
-            IReadOnlyList<ParameterPart> parameters = null,
-            IReadOnlyList<FilePart> files = null,
-            string accept = null,
-            string authorization = null)
+            IReadOnlyList<ParameterPart>? parameters = null,
+            IReadOnlyList<FilePart>? files = null,
+            string? accept = null,
+            string? authorization = null)
         {
             var message = new HttpRequestMessage
             {
@@ -283,7 +283,7 @@ namespace wWw.Saz
         }
 
         public static HttpRequestMessage GetRequest(
-            this string request, ParameterPart[] parameters, FilePart[] files)
+            this string request, ParameterPart[]? parameters, FilePart[]? files)
         {
             return GetRequest(request, true, parameters, files);
         }
@@ -291,10 +291,10 @@ namespace wWw.Saz
         public static HttpRequestMessage GetRequest(
             this string request,
             bool parseBody = true,
-            IReadOnlyList<ParameterPart> parameters = null,
-            IReadOnlyList<FilePart> files = null,
-            string accept = null,
-            string authorization = null)
+            IReadOnlyList<ParameterPart>? parameters = null,
+            IReadOnlyList<FilePart>? files = null,
+            string? accept = null,
+            string? authorization = null)
         {
             var parsed = Parser.ParseRawRequest(request);
             return parsed.GetRequest(parseBody, parameters, files, accept, authorization);
@@ -322,7 +322,7 @@ namespace wWw.Saz
             if (string.IsNullOrWhiteSpace(html)) throw new Exception(nameof(html));
             //dynamic json = JsonSerializer.Deserialize<ExpandoObject>(html);
             var converter = new ExpandoObjectConverter();
-            dynamic json = JsonConvert.DeserializeObject<ExpandoObject>(html, converter);
+            dynamic? json = JsonConvert.DeserializeObject<ExpandoObject>(html, converter);
             if (json is null) throw new Exception(html);
             return json;
         }
