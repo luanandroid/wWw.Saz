@@ -77,12 +77,12 @@ namespace wWw.Saz
 
         public static HttpMethod GetMethod(this ParsedHttpRequest request)
         {
-            return new HttpMethod(request.Headers.GetHeadersValue(Method));
+            return new HttpMethod(request.Headers.HeaderGetValue(Method));
         }
 
         public static string? GetContentType(this ParsedHttpRequest request)
         {
-            var contentType = request.Headers.GetHeadersValue(ContentType);
+            var contentType = request.Headers.HeaderGetValue(ContentType);
             return contentType?.Split(';')[0];
         }
 
@@ -261,7 +261,14 @@ namespace wWw.Saz
                 if (key.HeaderEquals(Method)) continue;
                 if (key.HeaderEquals(Host)) continue;
                 if (key.HeaderEquals(ContentDisposition)) continue;
-                message.Headers.Add(key, value);
+                try
+                {
+                    message.Headers.Add(key, value);
+                }
+                catch
+                {
+                    //
+                }
             }
 
             //var cookies = request.Cookies.Select(ck => ck.Key + "=" + ck.Value);
@@ -345,7 +352,7 @@ namespace wWw.Saz
             return ParseJson(html);
         }
 
-        public static void SaveFile(this IReadOnlyList<FilePart> files, string folder)
+        public static void SaveFiles(this IReadOnlyList<FilePart> files, string folder)
         {
             foreach (var file in files) SaveFile(file, folder);
         }
@@ -365,7 +372,7 @@ namespace wWw.Saz
         // ReSharper disable once UnusedMember.Global
         public static void SaveFile(this MultipartFormDataParser multiParts, string folder)
         {
-            multiParts.Files.SaveFile(folder);
+            multiParts.Files.SaveFiles(folder);
         }
 
         public static bool HeaderEquals(this string source, string destination)
@@ -373,7 +380,7 @@ namespace wWw.Saz
             return source.Equals(destination, StringComparison.CurrentCultureIgnoreCase);
         }
 
-        public static string GetHeadersValue(this Dictionary<string, string> headers, string key)
+        public static string HeaderGetValue(this Dictionary<string, string> headers, string key)
         {
             return headers.FirstOrDefault(pair => HeaderEquals(pair.Key, key)).Value;
         }
