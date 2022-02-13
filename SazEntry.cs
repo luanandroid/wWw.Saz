@@ -1,6 +1,4 @@
-﻿using System.Threading.Tasks;
-
-namespace wWw.Saz
+﻿namespace wWw.Saz
 {
     public class SazEntry
     {

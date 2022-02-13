@@ -1,14 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Dynamic;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
+﻿using System.Dynamic;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+using System.Web;
 using HttpMultipartParser;
 using HttpParser;
 using Newtonsoft.Json;
@@ -19,7 +14,7 @@ namespace wWw.Saz
     // ReSharper disable once UnusedMember.Global
     public static class HttpExtension
     {
-        public const string HeaderSeperator = "\r\n\r\n";
+        public const string HeaderSeparator = "\r\n\r\n";
         public const string Host = nameof(Host);
         public const string Method = nameof(Method);
         public const string HttpVersion = nameof(HttpVersion);
@@ -32,30 +27,15 @@ namespace wWw.Saz
         public const string ContentDisposition = "Content-Disposition";
         public const string Boundary = "alamofire.boundary.";
 
-        private static readonly Regex ContentLengthEx = new("\\\r\nContent-Length: (.*?)\\\r\n", RegexOptions.Compiled);
-
+        private static readonly Regex ContentLengthRegex = new("\\\r\nContent-Length: (.*?)\\\r\n", RegexOptions.Compiled);
+        
         // ReSharper disable once UnusedMember.Global
-        public static Task<object> Request(this HttpClient client, SazEntry entry)
-        {
-            return Request(client, entry, Array.Empty<FilePart>());
-        }
-
-        public static Task<object> Request(this HttpClient client, SazEntry entry, params FilePart[] files)
-        {
-            return Request(client, entry, null, files);
-        }
-
-        public static Task<object> Request(this HttpClient client, SazEntry entry, params ParameterPart[] parameters)
-        {
-            return Request(client, entry, parameters, null);
-        }
-
-        public static async Task<object> Request(this HttpClient client, SazEntry entry, ParameterPart[]? parameters,
-            FilePart[]? files)
+        public static async Task<object> Request(this HttpClient client, 
+            SazEntry entry, ParameterPart[]? parameters = null, FilePart[]? files = null, bool bodyIsJson = false, bool returnIsJson = false)
         {
             var template = await entry.GetRequestAsync();
-            var request = template.GetRequest(parameters, files);
-            return await client.RequestJson(request);
+            var request = template.GetRequest(true, parameters, files,null,null,bodyIsJson);
+            return returnIsJson? await client.RequestJson(request): await client.Request(request);
         }
 
         /// <summary>
@@ -82,8 +62,8 @@ namespace wWw.Saz
                 var buffer = new byte[1];
                 socket.Receive(buffer, 0, 1, 0);
                 headerString += Encoding.ASCII.GetString(buffer);
-                if (!headerString.Contains(HeaderSeperator)) continue;
-                var contentLengthStr = ContentLengthEx.Match(headerString).Groups[1].ToString();
+                if (!headerString.Contains(HeaderSeparator)) continue;
+                var contentLengthStr = ContentLengthRegex.Match(headerString).Groups[1].ToString();
                 var contentLength = int.Parse(contentLengthStr);
                 reading = false;
                 bodyBuff = new byte[contentLength];
@@ -97,7 +77,7 @@ namespace wWw.Saz
 
         public static HttpMethod GetMethod(this ParsedHttpRequest request)
         {
-            return new(request.Headers.GetHeadersValue(Method));
+            return new HttpMethod(request.Headers.GetHeadersValue(Method));
         }
 
         public static string? GetContentType(this ParsedHttpRequest request)
@@ -107,26 +87,46 @@ namespace wWw.Saz
         }
 
         /// <summary>
-        ///     validate : check content type & content length vs requestbody
+        ///     validate : check content type & content length vs request-body
         /// </summary>
         /// <param name="request"></param>
         /// <param name="parameters"></param>
         /// <param name="files"></param>
+        /// <param name="bodyIsJson"></param>
         /// <returns></returns>
         public static HttpContent? GetBody(
             this ParsedHttpRequest request,
-            IReadOnlyList<ParameterPart>? parameters = null,
-            IReadOnlyList<FilePart>? files = null)
+            IReadOnlyList<ParameterPart>? parameters,
+            IReadOnlyList<FilePart>? files, bool bodyIsJson)
         {
             if (request.RequestBody is null) return null;
-            var contentType = request.GetContentType();
+            var contentType = request.GetContentType() ?? throw new Exception(nameof(GetContentType));
             return contentType.HeaderEquals(MultiPart)
                 ? request.RequestBody.GetMultiParts().GetFormData(parameters, files)
-                : GetStringContent(request.RequestBody, contentType, parameters);
+                : bodyIsJson
+                    ? GetStringContentJson(request.RequestBody, contentType, parameters)
+                    : GetStringContent(request.RequestBody, contentType, parameters);
         }
 
         public static HttpContent? GetStringContent(
-            this string body,
+            this string? body,
+            string contentType,
+            IReadOnlyList<ParameterPart>? parameters = null)
+        {
+            if (body is null) return null;
+            if (parameters is null) return new StringContent(body, null, contentType);
+            var values = HttpUtility.ParseQueryString(body);
+            foreach (var parameter in parameters)
+            {
+                if (values.AllKeys.Contains(parameter.Name)) values[parameter.Name] = parameter.Data;
+                else values.Add(parameter.Name, parameter.Data);
+            }
+
+            return new StringContent(values.ToString() ?? throw new InvalidOperationException(), null, contentType);
+        }
+
+        public static HttpContent? GetStringContentJson(
+            this string? body,
             string contentType,
             IReadOnlyList<ParameterPart>? parameters = null)
         {
@@ -134,14 +134,17 @@ namespace wWw.Saz
             if (parameters is null) return new StringContent(body, null, contentType);
             var o = ParseJson(body);
             foreach (var part in parameters) Replace(o, part.Name, part.Data);
-
             return new StringContent(JsonConvert.SerializeObject(o), null, contentType);
         }
 
         public static void Replace(this ExpandoObject obj, string name, string value)
         {
+            if (obj is null) throw new Exception("obj is null");
+
             while (true)
             {
+                if (obj is null) break;
+
                 IDictionary<string, object> o = obj;
                 if (o is null) throw new Exception(nameof(Replace));
                 if (!name.Contains('.'))
@@ -233,21 +236,22 @@ namespace wWw.Saz
         /// <param name="files"></param>
         /// <param name="accept">application/json ...</param>
         /// <param name="parameters"></param>
+        /// <param name="bodyIsJson"></param>
         /// <returns></returns>
         public static HttpRequestMessage GetRequest(
             this ParsedHttpRequest request,
-            bool parseBody = true,
-            IReadOnlyList<ParameterPart>? parameters = null,
-            IReadOnlyList<FilePart>? files = null,
-            string? accept = null,
-            string? authorization = null)
+            bool parseBody,
+            IReadOnlyList<ParameterPart>? parameters,
+            IReadOnlyList<FilePart>? files,
+            string? accept,
+            string? authorization, bool bodyIsJson)
         {
             var message = new HttpRequestMessage
             {
                 Method = request.GetMethod(),
                 RequestUri = request.Uri,
                 //Headers = {{"evil", "live"}, {"hello", "world"}},
-                Content = parseBody ? request.GetBody(parameters, files) : null
+                Content = parseBody ? request.GetBody(parameters, files, bodyIsJson) : null
             };
             foreach (var (key, value) in request.Headers)
             {
@@ -268,36 +272,17 @@ namespace wWw.Saz
             if (accept is not null) message.Headers.Add(Accept, accept);
             return message;
         }
-
-        public static HttpRequestMessage GetRequest(
-            this string request, params ParameterPart[] parameters)
-        {
-            return GetRequest(request, true, parameters);
-        }
-
-        // ReSharper disable once UnusedMember.Global
-        public static HttpRequestMessage GetRequest(
-            this string request, params FilePart[] files)
-        {
-            return GetRequest(request, true, null, files);
-        }
-
-        public static HttpRequestMessage GetRequest(
-            this string request, ParameterPart[]? parameters, FilePart[]? files)
-        {
-            return GetRequest(request, true, parameters, files);
-        }
-
+        
         public static HttpRequestMessage GetRequest(
             this string request,
-            bool parseBody = true,
-            IReadOnlyList<ParameterPart>? parameters = null,
-            IReadOnlyList<FilePart>? files = null,
-            string? accept = null,
-            string? authorization = null)
+            bool parseBody,
+            IReadOnlyList<ParameterPart>? parameters,
+            IReadOnlyList<FilePart>? files,
+            string? accept,
+            string? authorization, bool bodyIsJson)
         {
             var parsed = Parser.ParseRawRequest(request);
-            return parsed.GetRequest(parseBody, parameters, files, accept, authorization);
+            return parsed.GetRequest(parseBody, parameters, files, accept, authorization, bodyIsJson);
         }
 
         public static async Task<string> Request(this HttpClient client, HttpRequestMessage message)
@@ -306,9 +291,9 @@ namespace wWw.Saz
             return await response.Content.ReadAsStringAsync();
         }
 
-        public static async Task<string> Request(this HttpClient client, string request)
+        public static async Task<string> Request(this HttpClient client, string requestRaw)
         {
-            using var message = GetRequest(request);
+            using var message = GetRequest(requestRaw, true, null,null,null,null,false);
             return await Request(client, message);
         }
 
