@@ -100,6 +100,9 @@ namespace wWw.Saz
             IReadOnlyList<FilePart>? files, bool bodyIsJson)
         {
             if (request.RequestBody is null) return null;
+            //có trường hợp request.RequestBody ko null, là string rỗng, method POST / GET
+            if (request.GetMethod() == HttpMethod.Get) return null;
+            //có trường hợp không xác định được ContentType, cho nó là string mặc định
             var contentType = request.GetContentType() ?? throw new Exception(nameof(GetContentType));
             return contentType.HeaderEquals(MultiPart)
                 ? request.RequestBody.GetMultiParts().GetFormData(parameters, files)
